@@ -1,0 +1,891 @@
+---
+title: "Assessing The Impact of Audience of NBA Player Performance"
+output: html_notebook
+---
+
+Libraries
+```{r include=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(ggrepel)
+library(tidyr)
+library(stats)
+library(scales)
+```
+
+# Load Data
+
+Set working directory
+```{r}
+setwd('C:/Users/alexs/OneDrive - University of Calgary/School/1. DATA 501')
+```
+
+Read CSV
+```{r}
+player_game_data <- read.csv("data/player_game_data.csv", header=T, encoding="UTF-8")
+team_game_data <- read.csv("data/team_game_data.csv", header=T, encoding="UTF-8")
+```
+
+# EDA
+
+Explore audience distributions
+```{r}
+ggplot(data=team_game_data, aes(x=as.numeric(attendance))) +
+  geom_histogram(binwidth = 500) + 
+  facet_wrap(~season)
+```
+
+Explore Home vs Away Performance - Boxplots (No Bubble)
+```{r}
+ggplot(data = filter(team_game_data, season==1 & BubbleGame==0), aes(x = PTS, y = HomeAway)) +
+  geom_boxplot() + 
+  facet_wrap(~Team)
+
+ggplot(data = filter(team_game_data, season==2 & BubbleGame==0), aes(x = PTS, y = HomeAway)) +
+  geom_boxplot() + 
+  facet_wrap(~Team)
+
+ggplot(data = filter(team_game_data, season==3 & BubbleGame==0), aes(x = PTS, y = HomeAway)) +
+  geom_boxplot() + 
+  facet_wrap(~Team)
+
+ggplot(data = filter(team_game_data, season==4 & BubbleGame==0), aes(x = PTS, y = HomeAway)) +
+  geom_boxplot() + 
+  facet_wrap(~Team)
+```
+
+Explore Home vs Away Performance - T-Tests (No Bubble)
+```{r}
+team_season_df <- team_game_data %>%
+  distinct(team_season) %>%
+  select(team_season)
+
+ttest_df <- data.frame()
+
+for (i in 1:nrow(team_season_df)){
+  ttest_i <- t.test(PTS ~ HomeAway, data=filter(team_game_data, team_season==team_season_df[i,] & BubbleGame==0))
+  ttest_i <- data.frame(pvalue = ttest_i$p.value,
+                        Away = ttest_i$estimate[[1]],
+                        Home = ttest_i$estimate[[2]])
+  ttest_df <- rbind(ttest_df, ttest_i)
+}
+
+ttest_df <- cbind(team_season_df, ttest_df)
+
+rm(ttest_i)
+```
+
+```{r}
+ttest_df$Advantage[ttest_df$pvalue<=0.10 & ttest_df$Home>ttest_df$Away]="Significant Home Advantage"
+ttest_df$Advantage[ttest_df$pvalue>0.10 & ttest_df$Home>ttest_df$Away]="Non-significant Home Advantage"
+ttest_df$Advantage[ttest_df$pvalue<=0.10 & ttest_df$Home<ttest_df$Away]="Significant Away Advantage"
+ttest_df$Advantage[ttest_df$pvalue>0.10 & ttest_df$Home<ttest_df$Away]="Non-significant Away Advantage"
+```
+
+```{r}
+ttest_df <- merge(x = ttest_df, 
+                  y = team_game_data %>%
+                        group_by(team_season) %>%
+                        summarise(attendance = mean(attendance)),
+                  by.x = "team_season",
+                  by.y = "team_season")
+```
+
+```{r}
+table(ttest_df$Advantage)
+```
+
+```{r}
+table(ttest_df$Advantage[ttest_df$attendance<10000])
+table(ttest_df$Advantage[ttest_df$attendance>10000])
+```
+
+```{r}
+filter(ttest_df, Advantage=="Non-significant Away Advantage" & attendance > 10000)
+```
+
+Explore Home vs Away Performance - Bubble
+```{r}
+games_played <- team_game_data %>%
+  filter(BubbleGame==1) %>%
+  group_by(Team) %>%
+  summarise(Games = sum(BubbleGame))
+```
+
+```{r}
+ggplot(data = filter(team_game_data, BubbleGame==1), aes(x = PTS, y = HomeAway)) +
+  geom_boxplot() + 
+  geom_text(data=games_played, 
+            mapping=aes(x=80, y=1, label=Games),
+            inherit.aes = F) + 
+  facet_wrap(. ~ Team)
+```
+
+```{r}
+bubble_ttest_df <- data.frame()
+
+for (i in 1:nrow(games_played)){
+  bubble_ttest_i <- t.test(PTS ~ HomeAway, data=filter(team_game_data, BubbleGame==1 & Team==as.character(games_played[i,1])))
+  bubble_ttest_i <- data.frame(pvalue = bubble_ttest_i$p.value,
+                        Away = bubble_ttest_i$estimate[[1]],
+                        Home = bubble_ttest_i$estimate[[2]])
+  bubble_ttest_df <- rbind(bubble_ttest_df, bubble_ttest_i)
+}
+
+bubble_ttest_df <- cbind(games_played, bubble_ttest_df)
+
+rm(bubble_ttest_i)
+```
+
+```{r}
+bubble_ttest_df$Advantage[bubble_ttest_df$pvalue<=0.10 & bubble_ttest_df$Home>bubble_ttest_df$Away]="Significant Home Advantage"
+bubble_ttest_df$Advantage[bubble_ttest_df$pvalue>0.10 & bubble_ttest_df$Home>bubble_ttest_df$Away]="Non-significant Home Advantage"
+bubble_ttest_df$Advantage[bubble_ttest_df$pvalue<=0.10 & bubble_ttest_df$Home<bubble_ttest_df$Away]="Significant Away Advantage"
+bubble_ttest_df$Advantage[bubble_ttest_df$pvalue>0.10 & bubble_ttest_df$Home<bubble_ttest_df$Away]="Non-significant Away Advantage"
+```
+
+```{r}
+table(bubble_ttest_df$Advantage)
+```
+
+## Proportion Tests for Home Court Advantage
+
+All Games
+```{r}
+ha <- data.frame(xtabs(~HomeAway + Team, data=team_game_data))
+wl_ha <- data.frame(xtabs(~WinLoss + HomeAway + Team, data=team_game_data))
+
+team_prop <- left_join(wl_ha,
+                       ha,
+                       by = c("HomeAway", "Team"))
+
+team_prop <- team_prop %>%
+  filter(WinLoss=="Win")
+
+team_prop_away <- team_prop %>%
+  filter(HomeAway=="Away")
+
+team_prop_home <- team_prop %>%
+  filter(HomeAway=="Home") 
+
+rm(wl_ha, ha)
+
+prop_test_df <- data.frame()
+
+for (i in 1:30){
+  
+  prop_test_i <- prop.test(c(team_prop_home[i,4], team_prop_away[i,4]), c(team_prop_home[i,5], team_prop_away[i,5]))
+  prop_test_i <- data.frame(pvalue = prop_test_i$p.value,
+                        Home = prop_test_i$estimate[[1]],
+                        Away = prop_test_i$estimate[[2]])
+  prop_test_df <- rbind(prop_test_df, prop_test_i)
+}
+
+prop_test_df <- cbind(team_prop_home[,c(3:5)], team_prop_away[,c(4:5)], prop_test_df)
+
+rm(prop_test_i)
+
+prop_test_df
+prop.test(c(sum(team_prop_home[,4]), sum(team_prop_away[,4])), c(sum(team_prop_home[,5]), sum(team_prop_away[,5])))
+```
+
+All empty arena games
+```{r}
+ha <- data.frame(xtabs(~HomeAway + Team, data=filter(team_game_data, empty==1)))
+wl_ha <- data.frame(xtabs(~WinLoss + HomeAway + Team, data=filter(team_game_data, empty==1)))
+
+team_prop <- left_join(wl_ha,
+                       ha,
+                       by = c("HomeAway", "Team"))
+
+team_prop <- team_prop %>%
+  filter(WinLoss=="Win")
+
+team_prop_away <- team_prop %>%
+  filter(HomeAway=="Away")
+
+team_prop_home <- team_prop %>%
+  filter(HomeAway=="Home") 
+
+rm(wl_ha, ha)
+
+prop_test_df <- data.frame()
+
+for (i in 1:30){
+  
+  prop_test_i <- prop.test(c(team_prop_home[i,4], team_prop_away[i,4]), c(team_prop_home[i,5], team_prop_away[i,5]))
+  prop_test_i <- data.frame(pvalue = prop_test_i$p.value,
+                        Home = prop_test_i$estimate[[1]],
+                        Away = prop_test_i$estimate[[2]])
+  prop_test_df <- rbind(prop_test_df, prop_test_i)
+}
+
+prop_test_df <- cbind(team_prop_home[,c(3:5)], team_prop_away[,c(4:5)], prop_test_df)
+
+rm(prop_test_i)
+
+prop_test_df
+prop.test(c(sum(team_prop_home[,4]), sum(team_prop_away[,4])), c(sum(team_prop_home[,5]), sum(team_prop_away[,5])))
+```
+
+All non-empty games
+```{r}
+ha <- data.frame(xtabs(~HomeAway + Team, data=filter(team_game_data, empty==0)))
+wl_ha <- data.frame(xtabs(~WinLoss + HomeAway + Team, data=filter(team_game_data, empty==0)))
+
+team_prop <- left_join(wl_ha,
+                       ha,
+                       by = c("HomeAway", "Team"))
+
+team_prop <- team_prop %>%
+  filter(WinLoss=="Win")
+
+team_prop_away <- team_prop %>%
+  filter(HomeAway=="Away")
+
+team_prop_home <- team_prop %>%
+  filter(HomeAway=="Home") 
+
+rm(wl_ha, ha)
+
+prop_test_df <- data.frame()
+
+for (i in 1:30){
+  
+  prop_test_i <- prop.test(c(team_prop_home[i,4], team_prop_away[i,4]), c(team_prop_home[i,5], team_prop_away[i,5]))
+  prop_test_i <- data.frame(pvalue = prop_test_i$p.value,
+                        Home = prop_test_i$estimate[[1]],
+                        Away = prop_test_i$estimate[[2]])
+  prop_test_df <- rbind(prop_test_df, prop_test_i)
+}
+
+prop_test_df <- cbind(team_prop_home[,c(3:5)], team_prop_away[,c(4:5)], prop_test_df)
+
+rm(prop_test_i)
+
+prop_test_df
+prop.test(c(sum(team_prop_home[,4]), sum(team_prop_away[,4])), c(sum(team_prop_home[,5]), sum(team_prop_away[,5])))
+```
+
+Bubble Games
+```{r}
+ha <- data.frame(xtabs(~HomeAway + Team, data=filter(team_game_data, BubbleGame==1)))
+wl_ha <- data.frame(xtabs(~WinLoss + HomeAway + Team, data=filter(team_game_data, BubbleGame==1)))
+
+team_prop <- left_join(wl_ha,
+                       ha,
+                       by = c("HomeAway", "Team"))
+
+team_prop <- team_prop %>%
+  filter(WinLoss=="Win")
+
+team_prop_away <- team_prop %>%
+  filter(HomeAway=="Away")
+
+team_prop_home <- team_prop %>%
+  filter(HomeAway=="Home") 
+
+rm(wl_ha, ha)
+
+prop_test_df <- data.frame()
+
+for (i in 1:22){
+  
+  prop_test_i <- prop.test(c(team_prop_home[i,4], team_prop_away[i,4]), c(team_prop_home[i,5], team_prop_away[i,5]))
+  prop_test_i <- data.frame(pvalue = prop_test_i$p.value,
+                        Home = prop_test_i$estimate[[1]],
+                        Away = prop_test_i$estimate[[2]])
+  prop_test_df <- rbind(prop_test_df, prop_test_i)
+}
+
+prop_test_df <- cbind(team_prop_home[,c(3:5)], team_prop_away[,c(4:5)], prop_test_df)
+
+rm(prop_test_i)
+
+prop_test_df
+prop.test(c(sum(team_prop_home[,4]), sum(team_prop_away[,4])), c(sum(team_prop_home[,5]), sum(team_prop_away[,5])))
+```
+
+Non-bubble playoff games
+```{r}
+ha <- data.frame(xtabs(~HomeAway + Team, data=filter(team_game_data, Playoff==1)))
+wl_ha <- data.frame(xtabs(~WinLoss + HomeAway + Team, data=filter(team_game_data, Playoff==1)))
+
+team_prop <- left_join(wl_ha,
+                       ha,
+                       by = c("HomeAway", "Team"))
+
+team_prop <- team_prop %>%
+  filter(WinLoss=="Win") 
+
+team_prop_away <- team_prop %>%
+  filter(HomeAway=="Away")
+
+team_prop_home <- team_prop %>%
+  filter(HomeAway=="Home") 
+
+rm(wl_ha, ha)
+
+prop_test_df <- data.frame()
+
+# for (i in 1:30){
+#   
+#   prop_test_i <- prop.test(c(team_prop_home[i,4], team_prop_away[i,4]), c(team_prop_home[i,5], team_prop_away[i,5]))
+#   prop_test_i <- data.frame(pvalue = prop_test_i$p.value,
+#                         Home = prop_test_i$estimate[[1]],
+#                         Away = prop_test_i$estimate[[2]])
+#   prop_test_df <- rbind(prop_test_df, prop_test_i)
+# }
+# 
+# prop_test_df <- cbind(team_prop_home[,c(3:5)], team_prop_away[,c(4:5)], prop_test_df)
+# 
+# rm(prop_test_i)
+# 
+# prop_test_df
+prop.test(c(sum(team_prop_home[,4]), sum(team_prop_away[,4])), c(sum(team_prop_home[,5]), sum(team_prop_away[,5])))
+```
+
+Empty, non-bubble games
+```{r}
+ha <- data.frame(xtabs(~HomeAway + Team, data=filter(team_game_data, BubbleGame==0 & empty==1)))
+wl_ha <- data.frame(xtabs(~WinLoss + HomeAway + Team, data=filter(team_game_data, BubbleGame==0 & empty==1)))
+
+team_prop <- left_join(wl_ha,
+                       ha,
+                       by = c("HomeAway", "Team"))
+
+team_prop <- team_prop %>%
+  filter(WinLoss=="Win")
+
+team_prop_away <- team_prop %>%
+  filter(HomeAway=="Away" & !(Team %in% c("Houston Rockets", "New Orleans Pelicans")))
+
+team_prop_home <- team_prop %>%
+  filter(HomeAway=="Home" & !(Team %in% c("Houston Rockets", "New Orleans Pelicans"))) 
+
+rm(wl_ha, ha)
+
+prop_test_df <- data.frame()
+
+for (i in 1:28){
+  
+  prop_test_i <- prop.test(c(team_prop_home[i,4], team_prop_away[i,4]), c(team_prop_home[i,5], team_prop_away[i,5]))
+  prop_test_i <- data.frame(pvalue = prop_test_i$p.value,
+                        Home = prop_test_i$estimate[[1]],
+                        Away = prop_test_i$estimate[[2]])
+  prop_test_df <- rbind(prop_test_df, prop_test_i)
+}
+
+prop_test_df <- cbind(team_prop_home[,c(3:5)], team_prop_away[,c(4:5)], prop_test_df)
+
+rm(prop_test_i)
+
+prop_test_df
+prop.test(c(sum(team_prop_home[,4]), sum(team_prop_away[,4])), c(sum(team_prop_home[,5]), sum(team_prop_away[,5])))
+```
+
+The higher home vs away is likely due to the nature of playoffs - higher seeded
+teams play more games at home. In the bubble, better teams play more games
+classified as "home".
+
+Overall, there is definitely a statistically significant home court advantage.
+This advantage is most prevalent in arenas with fans. There is still a home court 
+advantage in empty arenas outside the bubble, likely due to the effects travel 
+has on teams, as well as familiarity to the environment they play in. While fans
+play an important role in the home court advantage, it seems that the advantage 
+prevails, albeit less strongly, even in empty arenas. At an individual team level
+there are no significant advantages in empty arenas, however there are mostly 
+observational home advantages. In non-empty arenas, all teams have a significant
+home court advantage
+
+# Player EDA
+
+## Most empty games played
+```{r}
+games_empty <- data.frame(xtabs(~Starters + empty, data=filter(player_game_data, empty==1)))
+```
+
+
+## Nikola Jokic
+```{r}
+nikola <- filter(player_game_data, Starters=="Nikola Jokic")
+xtabs(~ season + empty, data=nikola)
+
+hist(filter(nikola, season==2 | season==3)$empty)
+hist(nikola$BPM)
+
+ggplot(data=filter(nikola, season==2 | season==3), aes(x=empty)) +
+  geom_histogram(bins=3) +
+  xlab("Empty (0 is Not Empty, 1 is Empty)") +
+  ggtitle("Games Played in Empty vs Non-Empty Environments")
+```
+
+Examine trends
+```{r}
+bpm_ts <- nikola %>%
+  select(BPM, FT., PTS, MP)
+
+bpm_ts <- ts(bpm_ts)
+
+plot(bpm_ts[,1])
+acf(bpm_ts[,1])
+```
+
+Test performance with season 2 and 3 data
+```{r}
+t.test(BPM~empty, data=filter(nikola, season==2 | season==3))
+t.test(FT.~empty, data=filter(nikola, season==2 | season==3))
+t.test(PTS~empty, data=filter(nikola, season==2 | season==3))
+t.test(MP~empty, data=filter(nikola, season==2 | season==3))
+```
+
+## Turn the above into a function where you can enter a player and see results
+
+```{r}
+player_performance <- function(player){
+  
+  # create data frame of selected player
+  player_df <- filter(player_game_data, Starters==player)
+  
+  # explore distribution of empty arena games and BPM
+  empty_dist <- hist(filter(player_df, season==2 | season==3)$empty)
+  BPM_dist <- hist(player_df$BPM)
+  
+  # analyze BPM trends
+  bpm_ts <- player_df %>%
+    select(BPM) %>%
+    filter(BPM != "NA")
+  bpm_ts <- ts(bpm_ts)
+  ts_plot <- bpm_ts
+  acf_plot <- acf(bpm_ts)
+  
+  # perform t-tests
+  BPM_test <- t.test(BPM~empty, data=filter(player_df, season==2 | season==3))
+  FT._test <- t.test(FT.~empty, data=filter(player_df, season==2 | season==3))
+  PTS_test <- t.test(PTS~empty, data=filter(player_df, season==2 | season==3))
+  MP_test <- t.test(MP~empty, data=filter(player_df, season==2 | season==3))
+  
+  result <- list(empty_dist, 
+                 BPM_dist,
+                 ts_plot,
+                 acf_plot,
+                 BPM_test,
+                 FT._test,
+                 PTS_test,
+                 MP_test)
+  
+  return(result)
+}
+```
+
+```{r}
+lebron <- player_performance("LeBron James")
+plot(lebron[[3]])
+lebron[5:8]
+```
+
+# How can we use data science techniques to determine the impact that the fans in attendance have on NBA players?
+
+Create Function
+```{r}
+player_impact <- function(player_name, data){
+  data <- data %>% 
+    filter(Starters==player_name & season %in% c(2,3)) %>%
+    select(Starters, PTS, BPM, FT, FTA, empty)
+  
+  t_test <- t.test(BPM ~ empty, data = data)
+  
+  t_test_pts <- t.test(PTS ~ empty, data = data)
+  
+  prop_test <- prop.test(c(sum(filter(data, empty==0)$FT, na.rm=T), sum(filter(data, empty==1)$FT, na.rm=T)), 
+                        c(sum(filter(data, empty==0)$FTA, na.rm=T), sum(filter(data, empty==1)$FTA, na.rm=T)))
+  
+  return_data <- data.frame(Player = player_name,
+                            BPM_nonempty = t_test$estimate[[1]],
+                            BPM_empty = t_test$estimate[[2]],
+                            p_value = t_test$p.value,
+                            PTS_nonempty = t_test_pts$estimate[[1]],
+                            PTS_empty = t_test_pts$estimate[[2]],
+                            p_value1 = t_test_pts$p.value,
+                            FT._nonempty = prop_test$estimate[[1]],
+                            FT._empty = prop_test$estimate[[2]],
+                            p_value2 = prop_test$p.value)
+  
+  return(return_data)
+}
+```
+
+Loop Through Each Player
+```{r include=FALSE}
+outliers <- boxplot(player_game_data$BPM)$out
+
+filter(player_game_data, !(BPM %in% outliers))
+
+player_list <- player_game_data %>%
+      filter(empty==1 & season %in% c(2,3), MP >= 10) %>%
+      select(Starters) %>%
+      count(Starters) %>%
+      filter(n>=25) %>%
+      pull(Starters)
+
+player_list2 <- player_game_data %>%
+      filter(empty==0 & season %in% c(2,3), MP >= 10) %>%
+      select(Starters) %>%
+      count(Starters) %>%
+      filter(n>=25) %>%
+      pull(Starters)
+
+player_list <- as.character(intersect(player_list, player_list2))
+
+player_impact_df <- player_impact(player_list[1], player_game_data)
+
+for (i in c(1:238)){
+  i_data <- player_impact(player_list[i], player_game_data)
+  player_impact_df <- rbind(player_impact_df, i_data)
+}
+```
+
+Flag Significant differences
+```{r}
+player_impact_df$SigBPM[player_impact_df$p_value<=0.1 & player_impact_df$BPM_nonempty < player_impact_df$BPM_empty] = "Significantly Increased BPM"
+player_impact_df$SigBPM[player_impact_df$p_value>=0.1& player_impact_df$BPM_nonempty < player_impact_df$BPM_empty] = "Insignificantly Increased BPM"
+player_impact_df$SigBPM[player_impact_df$p_value<=0.1 & player_impact_df$BPM_nonempty > player_impact_df$BPM_empty] = "Significantly Decreased BPM"
+player_impact_df$SigBPM[player_impact_df$p_value>=0.1& player_impact_df$BPM_nonempty > player_impact_df$BPM_empty] = "Insignificantly Decreased BPM"
+player_impact_df$SigBPM[player_impact_df$p_value>=0.9] = "Nearly Equal BPM"
+
+player_impact_df$SigPTS[player_impact_df$p_value1<=0.1 & player_impact_df$PTS_nonempty < player_impact_df$PTS_empty] = "Significantly Increased PTS"
+player_impact_df$SigPTS[player_impact_df$p_value1>=0.1& player_impact_df$PTS_nonempty < player_impact_df$PTS_empty] = "Insignificantly Increased PTS"
+player_impact_df$SigPTS[player_impact_df$p_value1<=0.1 & player_impact_df$PTS_nonempty > player_impact_df$PTS_empty] = "Significantly Decreased PTS"
+player_impact_df$SigPTS[player_impact_df$p_value1>=0.1& player_impact_df$PTS_nonempty > player_impact_df$PTS_empty] = "Insignificantly Decreased PTS"
+player_impact_df$SigPTS[player_impact_df$p_value1>=0.9] = "Nearly Equal PTS"
+
+player_impact_df$SigFT.[player_impact_df$p_value2<=0.1 & player_impact_df$FT._nonempty < player_impact_df$FT._empty] = "Significantly Increased FT%"
+player_impact_df$SigFT.[player_impact_df$p_value2>=0.1 & player_impact_df$FT._nonempty < player_impact_df$FT._empty] = "Insignificantly Increased FT%"
+player_impact_df$SigFT.[player_impact_df$p_value2<=0.1 & player_impact_df$FT._nonempty > player_impact_df$FT._empty] = "Significantly Decreased FT%"
+player_impact_df$SigFT.[player_impact_df$p_value2>=0.1 & player_impact_df$FT._nonempty > player_impact_df$FT._empty] = "Insignificantly Decreased FT%"
+player_impact_df$SigFT.[player_impact_df$p_value2>=0.9] = "Nearly Equal FT%"
+```
+
+```{r}
+bpm_table <- table(player_impact_df$SigBPM)
+pts_table <- table(player_impact_df$SigPTS)
+ft._table <- table(player_impact_df$SigFT.)
+
+total_table <- data.frame(rbind(bpm_table, pts_table, ft._table))
+```
+
+Find Percentages of total
+```{r}
+bpm_vector <- c(bpm_table[[1]],
+  bpm_table[[2]],
+  bpm_table[[3]],
+  bpm_table[[4]],
+  bpm_table[[5]])
+
+pts_vector <- c(pts_table[[1]],
+  pts_table[[2]],
+  pts_table[[3]],
+  pts_table[[4]],
+  pts_table[[5]])
+
+ft._vector <- c(ft._table[[1]],
+  ft._table[[2]],
+  ft._table[[3]],
+  ft._table[[4]],
+  ft._table[[5]])
+```
+
+```{r}
+bpm_perc <- percent(bpm_vector[1:5]/sum(bpm_vector))
+pts_perc <- percent(pts_vector[1:5]/sum(pts_vector))
+ft._perc <- percent(ft._vector[1:5]/sum(ft._vector))
+
+perc_table <- data.frame(rbind(bpm_perc, pts_perc, ft._perc))
+colnames(perc_table) <- c("Nearly Equal",
+                       "Insignificantly Decreased",
+                       "Insignificantly Increased",
+                       "Significantly Decreased",
+                       "Significantly Increased")
+
+rownames(perc_table) <- c("BPM", "PTS", "FT.")
+
+perc_table
+```
+
+# League Level Results
+
+Testing points in non-empty vs empty
+```{r}
+ggplot(filter(team_game_data, season %in% c(2, 3)), aes(x=empty)) +
+  geom_bar()
+
+# only use season 2 and 3 to even out sample size in each group
+# there are still twice as many non-empty games vs empty games
+
+t.test(PTS ~ empty, data=filter(player_game_data, season %in% c(2,3)))
+t.test(PTS ~ empty, data=filter(team_game_data, season %in% c(2,3)))
+```
+
+Testing free throw percentage in non-empty vs empty
+```{r}
+ftm_empty <- sum(filter(team_game_data, empty==1 & season %in% c(2,3))$FT, na.rm=T)
+ftm_nonempty <- sum(filter(team_game_data, empty==0 & season %in% c(2,3))$FT, na.rm=T)
+fta_empty <- sum(filter(team_game_data, empty==1 & season %in% c(2,3))$FTA, na.rm=T)
+fta_nonempty <- sum(filter(team_game_data, empty==0 & season %in% c(2,3))$FTA, na.rm=T)
+
+prop.test(c(ftm_empty, ftm_nonempty), c(fta_empty, fta_nonempty))
+```
+
+Prop tests with past probabilities of winning
+```{r}
+xtabs(~ HomeAway + WinLoss, data = filter(team_game_data, empty==0 & Playoff==0 & season %in% c(1,2)))
+xtabs(~ HomeAway + WinLoss, data = filter(team_game_data, empty==1 & Playoff==0))
+xtabs(~ HomeAway + WinLoss, data = filter(team_game_data, BubbleGame==1))
+
+# Regular season winning percentage compared to past 10 years winning percentage
+prop.test(x = c(937, 1264),
+          n = c(1264+937, 1264+937),
+          p = c(0.4104, 0.5896),
+          correct = F)
+
+# Regular season winning percentage in empty arenas compared to past 10 years winning percentage
+prop.test(x = c(290, 303),
+          n = c(290+303, 290+303),
+          p = c(0.4104, 0.5896),
+          correct = F)
+
+# Bubble winning percentage compared to past 10 years winning percentage
+prop.test(x = c(82, 90),
+          n = c(172, 172),
+          p = c(0.4104, 0.5896),
+          correct = F)
+```
+
+# Are certain players “big game performers”? (Playoff vs Non-Playoff Performance)
+
+```{r}
+#Select only the relevant columns for the tests
+playoffs_player <- player_game_data %>% select(Starters,Playoff,BPM,Win,Season,PTS,FT.,FT,FTA,attendance)
+
+
+#Create a dataframe with all unique players
+unique_players <- unique(playoffs_player$Starters)
+unique_players <- data.frame(unique_players)
+unique_players <- unique_players %>% filter(unique_players != 'Álex Abrines' & unique_players != 'J.R. Smith' & unique_players != 'Joakim Noah' & unique_players != 'Donta Hall' & unique_players != 'Lance Thomas' & unique_players != 'Jamal Crawford' & unique_players != 'Kyle Alexander')
+
+
+#Create columns for total games played, and ttal playoff games played
+
+for (i in 1:nrow(unique_players)){
+  player_filter <- playoffs_player %>% filter(Starters == unique_players$unique_players[i])
+  unique_players$totgames[i] <- nrow(player_filter)
+  
+  player_filter <- playoffs_player %>% filter(Starters == unique_players$unique_players[i] & Playoff == 1)
+  unique_players$totplayoffgames[i] <- nrow(player_filter)
+  
+}
+
+#Add total games and total playoff games played to the original dataset
+playoffs_player$totgames <- unique_players$totgames[cbind(match(playoffs_player$Starters,unique_players$unique_players))]
+
+playoffs_player$totplayoffgames <- unique_players$totplayoffgames[cbind(match(playoffs_player$Starters,unique_players$unique_players))]
+
+#Function to run tests for playoff games
+playoffs <- function(player,data){
+
+funcfilter <- data %>% filter(Starters == player)
+
+funcfilter$BPM <- as.numeric(funcfilter$BPM)
+funcfilter$PTS <- as.numeric(funcfilter$PTS)
+funcfilter$FT <- as.numeric(funcfilter$FT)
+funcfilter$FTA <- as.numeric(funcfilter$FTA)
+funcfilter$Playofftest <- as.factor(funcfilter$Playoff)
+
+x1 <- funcfilter %>% filter(FTA!= 0 & Playofftest == 0)
+x2 <- funcfilter %>% filter(FTA!= 0 & Playofftest == 1)
+
+boxplotbpm <- ggplot(data = funcfilter, aes(x = Playofftest, y = BPM)) + geom_boxplot()
+boxplotpts <- ggplot(data = funcfilter, aes(x = Playofftest, y = PTS)) + geom_boxplot()
+boxplotft <- ggplot(data = funcfilter, aes(x = Playofftest, y = FT.)) + geom_boxplot()
+
+playoff.pts <- t.test(data = funcfilter, PTS~Playofftest, alternative = "two.sided", mu = 0)$p.value
+playoff.bpm <- t.test(data = funcfilter, BPM~Playofftest, alternative = "two.sided", mu = 0)$p.value
+playoff.FT <- prop.test(x = c(sum(x1$FT),sum(x2$FT)), n = c(sum(x1$FTA),sum(x2$FTA)))$p.value
+
+estptsplayoffs <- t.test(data = funcfilter, PTS~Playofftest, alternative = "two.sided", mu = 0)$estimate
+estbpm <- t.test(data = funcfilter, BPM~Playofftest, alternative = "two.sided", mu = 0)$estimate
+estft <- prop.test(x = c(sum(x1$FT),sum(x2$FT)), n = c(sum(x1$FTA),sum(x2$FTA)), alternative = "two.sided")$estimate
+
+
+meanpointsplayoffs <- estptsplayoffs[[2]]
+meanpointsnonplayoffs <- estptsplayoffs[[1]]
+meanbpmplayoffs <- estbpm[[2]]
+meanbpmnonplayoffs <- estbpm[[1]]
+propftplayoffs <- estft[[2]]
+propftnonplayoffs <- estft[[1]]
+
+results <- list(boxplotbpm,boxplotpts,boxplotft,playoff.pts,playoff.bpm,playoff.FT,meanpointsplayoffs,meanpointsnonplayoffs,meanbpmplayoffs,meanbpmnonplayoffs,propftplayoffs,propftnonplayoffs)
+
+return(results)
+}
+
+#CLT condition for normality
+unique_playersfilt <- unique_players %>% filter(totplayoffgames > 25 & totgames > 25)
+
+for (i in 1:nrow(unique_playersfilt)){
+  
+  results <- playoffs(unique_playersfilt$unique_players[i],playoffs_player)
+  
+  unique_playersfilt$ptspvalue[i] <- results[4]
+  unique_playersfilt$bpmpvalue[i] <- results[5]
+  unique_playersfilt$ftpvalue[i] <- results[6]
+  unique_playersfilt$meanptsplayoffs[i] <- results[7]
+  unique_playersfilt$meanptsnonplayoffs[i] <- results[8]
+  unique_playersfilt$meanbpmplayoffs[i] <- results[9]
+  unique_playersfilt$meanbpmnonplayoffs[i] <- results[10]
+  unique_playersfilt$propftplayoffs[i] <- results[11]
+  unique_playersfilt$propftnonplayoffs[i] <- results[12]
+}
+
+as.numeric(unique_playersfilt$ptsplayoffs)
+as.numeric(unique_playersfilt$bpmplayoffs)
+as.numeric(unique_playersfilt$ftplayoffs)
+
+
+#P Value % for points
+length(unique_playersfilt$ptsplayoffs[unique_playersfilt$ptsplayoffs < 0.1]) / nrow(unique_playersfilt)
+#P Value % for BPM
+length(unique_playersfilt$bpmplayoffs[unique_playersfilt$bpmplayoffs < 0.1]) / nrow(unique_playersfilt)
+#P Value % for FT
+length(unique_playersfilt$ftplayoffs[unique_playersfilt$ftplayoffs < 0.1]) / nrow(unique_playersfilt)
+```
+
+```{r}
+#Creates columns to determine significance
+unique_playersfilt$PTSsignificance[unique_playersfilt$ptspvalue <= 0.1 & as.numeric(unique_playersfilt$meanptsplayoffs) > as.numeric(unique_playersfilt$meanptsnonplayoffs)] = "Significantly Increased PTS"
+unique_playersfilt$PTSsignificance[unique_playersfilt$ptspvalue <= 0.1 & as.numeric(unique_playersfilt$meanptsplayoffs) < as.numeric(unique_playersfilt$meanptsnonplayoffs)] = "Significantly Decreased PTS"
+unique_playersfilt$PTSsignificance[unique_playersfilt$ptspvalue > 0.1 & as.numeric(unique_playersfilt$meanptsplayoffs) > as.numeric(unique_playersfilt$meanptsnonplayoffs)] = "Insignificantly Increased PTS"
+unique_playersfilt$PTSsignificance[unique_playersfilt$ptspvalue > 0.1 & as.numeric(unique_playersfilt$meanptsplayoffs) < as.numeric(unique_playersfilt$meanptsnonplayoffs)] = "Insignificantly Decreased PTS"
+unique_playersfilt$PTSsignificance[unique_playersfilt$ptspvalue >= 0.9] = "Nearly Equal PTS"
+
+unique_playersfilt$BPMsignificance[unique_playersfilt$bpmpvalue <= 0.1 & as.numeric(unique_playersfilt$meanbpmplayoffs) > as.numeric(unique_playersfilt$meanbpmnonplayoffs)] = "Significantly Increased BPM"
+unique_playersfilt$BPMsignificance[unique_playersfilt$bpmpvalue <= 0.1 & as.numeric(unique_playersfilt$meanbpmplayoffs) < as.numeric(unique_playersfilt$meanbpmnonplayoffs)] = "Significantly Decreased BPM"
+unique_playersfilt$BPMsignificance[unique_playersfilt$bpmpvalue > 0.1 & as.numeric(unique_playersfilt$meanbpmplayoffs) > as.numeric(unique_playersfilt$meanbpmnonplayoffs)] = "Insignificantly Increased BPM"
+unique_playersfilt$BPMsignificance[unique_playersfilt$bpmpvalue > 0.1 & as.numeric(unique_playersfilt$meanbpmplayoffs) < as.numeric(unique_playersfilt$meanbpmnonplayoffs)] = "Insignificantly Decreased BPM"
+unique_playersfilt$BPMsignificance[unique_playersfilt$bpmpvalue >= 0.9] = "Nearly Equal BPM"
+
+unique_playersfilt$FTsignificance[unique_playersfilt$ftpvalue <= 0.1 & as.numeric(unique_playersfilt$propftplayoffs) > as.numeric(unique_playersfilt$propftnonplayoffs)] = "Significantly Increased FT %"
+unique_playersfilt$FTsignificance[unique_playersfilt$ftpvalue <= 0.1 & as.numeric(unique_playersfilt$propftplayoffs) < as.numeric(unique_playersfilt$propftnonplayoffs)] = "Significantly Decreased FT %"
+unique_playersfilt$FTsignificance[unique_playersfilt$ftpvalue > 0.1 & as.numeric(unique_playersfilt$propftplayoffs) > as.numeric(unique_playersfilt$propftnonplayoffs)] = "Insignificantly Increased FT %"
+unique_playersfilt$FTsignificance[unique_playersfilt$ftpvalue > 0.1 & as.numeric(unique_playersfilt$propftplayoffs) < as.numeric(unique_playersfilt$propftnonplayoffs)] = "Insignificantly Decreased FT %"
+unique_playersfilt$FTsignificance[unique_playersfilt$ftpvalue >= 0.9] = "Nearly Equal FT %"
+```
+
+```{r}
+#Makes all columns from tests numeric
+unique_playersfilt$ptspvalue <- as.numeric(unique_playersfilt$ptspvalue)
+unique_playersfilt$bpmpvalue <- as.numeric(unique_playersfilt$bpmpvalue)
+unique_playersfilt$meanptsplayoffs <- as.numeric(unique_playersfilt$meanptsplayoffs)
+unique_playersfilt$meanptsnonplayoffs <- as.numeric(unique_playersfilt$meanptsnonplayoffs)
+unique_playersfilt$meanbpmplayoffs <- as.numeric(unique_playersfilt$meanbpmplayoffs)
+unique_playersfilt$meanbpmnonplayoffs <- as.numeric(unique_playersfilt$meanbpmnonplayoffs)
+unique_playersfilt$propftplayoffs <- as.numeric(unique_playersfilt$propftplayoffs)
+unique_playersfilt$propftnonplayoffs <- as.numeric(unique_playersfilt$propftnonplayoffs)
+
+unique_playersfilt
+```
+
+Teams
+```{r}
+#Selects relevant columns
+colnames(team_game_data)[1] <- "Team"
+playoffs_team <- team_game_data %>% select(Team,Playoff,Win)
+
+unique_team <- unique(playoffs_team$Team)
+unique_team <- data.frame(unique_team)
+
+
+#Counts total games and total playoff games
+for (i in 1:nrow(unique_team)){
+  team_filter <- playoffs_team %>% filter(Team == unique_team$unique_team[i])
+  unique_team$totgames[i] <- nrow(team_filter)
+  
+  team_filter <- playoffs_team %>% filter(Team == unique_team$unique_team[i] & Playoff == 1)
+  unique_team$totplayoffgames[i] <- nrow(team_filter)
+  
+}
+
+playoffs_team$totgames <- unique_team$totgames[cbind(match(playoffs_team$Team,unique_team$unique_team))]
+
+playoffs_team$totplayoffgames <- unique_team$totplayoffgames[cbind(match(playoffs_team$Team,unique_team$unique_team))]
+
+
+#Function to run tests on team performance
+playoffsteam <- function(team,data){
+
+funcfilter <- data %>% filter(Team == team)
+
+funcfilter$Playoff <- as.factor(funcfilter$Playoff)
+funcfilter$Win <- as.numeric(funcfilter$Win)
+
+x1 <- funcfilter %>% filter(Playoff == 0)
+x2 <- funcfilter %>% filter(Playoff == 1)
+
+playoff.Win <- prop.test(x = c(sum(x1$Win),sum(x2$Win)), n = c(nrow(x1),nrow(x2)),alternative = "two.sided")$p.value
+est.Win <- prop.test(x = c(sum(x1$Win),sum(x2$Win)), n = c(nrow(x1),nrow(x2)),alternative = "two.sided")$estimate
+
+estwinnonplayoff <- as.numeric(est.Win[[1]])
+estwinplayoff <- as.numeric(est.Win[[2]])
+
+results <- list(playoff.Win,estwinnonplayoff,estwinplayoff)
+return(results)
+}
+
+for (i in 1:nrow(unique_team)){
+  teamfilt <- playoffs_team %>% filter(Team == unique_team$unique_team[i])
+  unique_team$totalwins[i] <- sum(teamfilt$Win)
+  unique_team$winpercentage[i] <- unique_team$totalwins[i]/unique_team$totgames[i]
+  
+}
+unique_team$condition1 <- unique_team$totplayoffgames*unique_team$winpercentage
+unique_team$condition2 <- unique_team$totplayoffgames*(1-unique_team$winpercentage)
+
+#Proportion test condition of (n*p) >= 10 and (n*(1-p)) >= 10
+
+proportiontest_team <- unique_team %>% filter(condition1>10& condition2>10)
+
+
+#Adds results as columns
+for (i in 1:nrow(proportiontest_team)){
+  results <- playoffsteam(proportiontest_team$unique_team[i],playoffs_team)
+  
+  proportiontest_team$Winpvalue[i] <- results[1]
+  proportiontest_team$propwinnonplayoff[i] <- results[2]
+  proportiontest_team$propwinplayoff[i] <- results[3]
+}
+
+
+```
+
+```{r}
+#Determines significance for each team
+proportiontest_team$Winsignificance[proportiontest_team$Winpvalue <= 0.1 & as.numeric(proportiontest_team$propwinplayoff) > as.numeric(proportiontest_team$propwinnonplayoff)] = "Significantly Increased Win %"
+
+proportiontest_team$Winsignificance[proportiontest_team$Winpvalue <= 0.1 & as.numeric(proportiontest_team$propwinplayoff) < as.numeric(proportiontest_team$propwinnonplayoff)] = "Significantly Decreased Win %"
+
+proportiontest_team$Winsignificance[proportiontest_team$Winpvalue > 0.1 & as.numeric(proportiontest_team$propwinplayoff) > as.numeric(proportiontest_team$propwinnonplayoff)] = "Insignificantly Increased Win %"
+
+proportiontest_team$Winsignificance[proportiontest_team$Winpvalue > 0.1 & as.numeric(proportiontest_team$propwinplayoff) < as.numeric(proportiontest_team$propwinnonplayoff)] = "Insignificantly Decreased Win %"
+
+proportiontest_team$Winsignificance[proportiontest_team$Winpvalue >= 0.9] = "Nearly Equal Win %"
+```
+
+```{r}
+proportiontest_team
+```
+
+
+
+
+
+

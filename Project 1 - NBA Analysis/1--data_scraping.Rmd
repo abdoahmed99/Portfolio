@@ -1,0 +1,780 @@
+---
+title: "Basketball Reference Data Scrape"
+output: html_notebook
+---
+WARNING 
+
+Scraping the data takes a very long time to complete, upwards to 30 mins for each sheet. We have provided the files 'player_game_data' and 'team_game_data' in our submission folder under the data subfolder for your convenience so that you do not need to run this entire file. Those two files are the result of this code.
+
+
+Load Libraries
+```{r include=FALSE}
+library(rvest)
+library(tidyverse)
+library(ggplot2)
+```
+
+Set your working directory
+```{r}
+setwd('C:/Users/alexs/OneDrive - University of Calgary/School/1. DATA 501')
+```
+
+Link Setup
+```{r}
+# 2018-19 Season
+general_link_2019 <- "https://www.basketball-reference.com/leagues/NBA_2019_games-"
+end_link <- ".html"
+months_2019 <- c("october", "november", "december", "january", 
+                 "february", "march", "april", "may", "june")
+
+html_2019 <- paste(general_link_2019, months_2019[1:9], end_link, sep="")
+
+# 2019-20 Season
+general_link_2020 <- "https://www.basketball-reference.com/leagues/NBA_2020_games-"
+end_link <- ".html"
+months_2020 <- c("october-2019", "november", "december", "january", "february", 
+                 "march", "july", "august", "september", "october-2020")
+
+html_2020 <- paste(general_link_2020, months_2020[1:10], end_link, sep="")
+
+# 2020-21 Season
+general_link_2021 <- "https://www.basketball-reference.com/leagues/NBA_2021_games-"
+end_link <- ".html"
+months_2021 <- c("december", "january", "february", "march", 
+                 "april", "may", "june", "july")
+
+html_2021 <- paste(general_link_2021, months_2021[1:8], end_link, sep="")
+
+# 2021-22 Season
+general_link_2022 <- "https://www.basketball-reference.com/leagues/NBA_2022_games-"
+end_link <- ".html"
+months_2022 <- c("october","november","december", "january", "february", "march", 
+                 "april")
+
+html_2022 <- paste(general_link_2022, months_2022[1:length(months_2022)], end_link, sep="")
+
+
+# concatenate links
+
+html_links <- c(html_2019, html_2020, html_2021)
+```
+
+Create Game Attendance Data Frame and Links Vector
+```{r}
+boxscr_links <- character(0)
+```
+
+Creating a dataframe with team information
+```{r}
+all_teams <- c('Atlanta Hawks','Boston Celtics','Brooklyn Nets','Charlotte Hornets','Chicago Bulls','Cleveland Cavaliers','Dallas Mavericks','Denver Nuggets','Detroit Pistons','Golden State Warriors','Houston Rockets','Indiana Pacers','Los Angeles Clippers','Los Angeles Lakers','Memphis Grizzlies','Miami Heat','Milwaukee Bucks','Minnesota Timberwolves','New Orleans Pelicans','New York Knicks','Oklahoma City Thunder','Orlando Magic','Philadelphia 76ers','Phoenix Suns','Portland Trail Blazers','Sacramento Kings','San Antonio Spurs','Toronto Raptors','Utah Jazz','Washington Wizards')
+
+team_abbrev <- c('ATL','BOS','BRK','CHO','CHI','CLE','DAL','DEN','DET','GSW','HOU','IND','LAC','LAL','MEM','MIA','MIL','MIN','NOP','NYK','OKC','ORL','PHI','PHO','POR','SAC','SAS','TOR','UTA','WAS')
+
+team_info <- data.frame(Team_Name = all_teams,team_abbrev)
+
+for (i in 1:nrow(team_info)){
+  team_info$boxscorelinkbasic[i] <- paste0("//div[@class = 'table_container' and @id='div_box-",team_info$team_abbrev[i],"-game-basic']")
+  
+}
+
+for (i in 1:nrow(team_info)){
+  team_info$boxscorelinkavdanced[i] <- paste0("//div[@class = 'table_container' and @id='div_box-",team_info$team_abbrev[i],"-game-advanced']")
+}
+```
+
+Scrape All Box Score Links
+```{r}
+for (i in 1:length(html_links)) {
+  # scrape all box score links
+  scrape_i <- read_html(html_links[i])
+  links_i <- html_elements(scrape_i, "td a") %>% html_attr("href")
+  links_i <- links_i[(seq(from=3, to=length(links_i), by=3))]
+  boxscr_links <- c(boxscr_links, paste0("https://www.basketball-reference.com", links_i[1:length(links_i)]))
+}
+
+```
+
+Use all the links to compile the box scores onto one dataset
+```{r}
+#New Empty Dataframe
+playerboxscore <- data.frame("Players" = character(0), "MP"=numeric(0),"FG"= numeric(0),"FGA"= numeric(0),"FG%"= numeric(0),"3P"= numeric(0),"3PA"= numeric(0),"3P%"= numeric(0),"FT"= numeric(0),"FTA"= numeric(0),"FT%"= numeric(0),"ORB"= numeric(0),"DRB"= numeric(0),"TRB"= numeric(0),"AST"= numeric(0),
+                         "STL"= numeric(0),"BLK"= numeric(0),"TOV"= numeric(0),"PF"= numeric(0),"PTS"= numeric(0),'gameid'= numeric(0) )
+
+gameid = 0
+#For loop to go through links
+for (i in 1:length(boxscr_links)){
+boxscr_test <- read_html(boxscr_links[i])
+gameid = gameid + 1
+
+
+#Scrapes each webpage to determine home and away team + date of game
+teamsplaying <- html_nodes(x = boxscr_test, xpath = "//div[@class = 'scorebox']//div//a[@itemprop = 'name']") %>% html_text()
+team_home <- teamsplaying[2]
+team_away <- teamsplaying[1]
+
+date <- boxscr_links[i]
+
+year <- substr(date,48,51)
+month <- substr(date,52,53)
+day <- substr(date,54,55)
+
+fulldate <- paste(year,month,day,sep = "/")
+
+#Scrapes data for home team
+for (i in 1:nrow(team_info)){
+  if (team_home == team_info[i,1]){
+  home_index <- i}
+}
+
+boxscr_tables_basic <- html_nodes(x = boxscr_test, xpath = team_info[home_index,3]) %>% html_table()
+boxscr_tables_advanced <-  html_nodes(x = boxscr_test, xpath = team_info[home_index,4]) %>% html_table()
+
+#Cleans data + Add a few columns + Add data to new dataframe
+  
+  boxscorebas <- as.data.frame(boxscr_tables_basic[1])
+  boxscoreadv <- as.data.frame(boxscr_tables_advanced[1])
+  if(any(colnames(boxscoreadv) == 'Var.17')){
+   boxscoreadv$Var.17 = 'Manual Entry'
+  }
+    if(any(colnames(boxscoreadv) == FALSE)){
+   boxscoreadv$Var.17 = 'Manual Entry'
+}
+ 
+  boxscoreadv[1,1] = "Starters1"
+  boxscoreadv[1,2] = "MP1"
+  boxscore1 <- cbind(boxscorebas, boxscoreadv)
+  names(boxscore1) <- boxscore1[1,]
+  boxscore1 <- boxscore1[-1,]
+  boxscore1 <- boxscore1 %>% filter(Starters != 'Reserves' & Starters != 'Team Totals' & MP != "Did Not Play" & MP != "Did Not Dress" & MP != "Not With Team")
+  boxscore1$Team <- team_home
+  boxscore1$Year <- year
+  boxscore1$Month <- month
+  boxscore1$Day <- day
+  boxscore1$FullDate <- fulldate
+  boxscore1$HomeAway <- 'Home'
+  boxscore1$gameid = gameid
+   
+  if(any(colnames(boxscore1) == 'Manual Entry')){
+   names(boxscore1)[names(boxscore1) == 'Manual Entry'] <- 'BPM'
+}
+  
+  if(any(colnames(boxscore1) == 'BPM') == FALSE){
+  boxscore1$BPM <- 'Manual Entry'
+}
+  playerboxscore <- rbind(playerboxscore,boxscore1)
+
+  #Repeat above but for away team
+for (j in 1:nrow(team_info)){
+  if (team_away == team_info[j,1]){
+   away_index <- j}
+}
+
+
+boxscr_tables_basic <- html_nodes(x = boxscr_test, xpath = team_info[away_index,3]) %>% html_table()
+boxscr_tables_advanced <-  html_nodes(x = boxscr_test, xpath = team_info[away_index,4]) %>% html_table()
+
+  
+  boxscorebas <- as.data.frame(boxscr_tables_basic[1])
+  boxscoreadv <- as.data.frame(boxscr_tables_advanced[1])
+  if(any(colnames(boxscoreadv) == 'Var.17')){
+  boxscoreadv$Var.17 = 'Manual Entry'
+}
+  boxscoreadv[1,1] = "Starters1"
+  boxscoreadv[1,2] = "MP1"
+  boxscore2 <- cbind(boxscorebas, boxscoreadv)
+  names(boxscore2) <- boxscore2[1,]
+  boxscore2 <- boxscore2[-1,]
+  
+  boxscore2 <- boxscore2 %>% filter(Starters != 'Reserves' & Starters != 'Team Totals' & MP != "Did Not Play" & MP != "Did Not Dress" & MP != "Not With Team")
+  boxscore2$Team <- team_away
+  boxscore2$Year <- year
+  boxscore2$Month <- month
+  boxscore2$Day <- day
+  boxscore2$FullDate <- fulldate
+  boxscore2$HomeAway <- 'Away'
+  boxscore2$gameid = gameid
+  
+    if(any(colnames(boxscore2) == 'Manual Entry')){
+    names(boxscore2)[names(boxscore2) == 'Manual Entry'] <- 'BPM'
+}
+if(any(colnames(boxscore2) == 'BPM') == FALSE){
+  boxscore2$BPM <- 'Manual Entry'
+}
+  
+  playerboxscore <- rbind(playerboxscore,boxscore2)
+
+}
+
+
+```
+
+Create columns to determine if game was a playoff game
+```{r}
+for (i in 1:nrow(playerboxscore)){
+if(between(as.Date(playerboxscore$FullDate[i]),as.Date("2021-05-18"),as.Date("2021-07-30")) | between(as.Date(playerboxscore$FullDate[i]),as.Date("2020-07-15"),as.Date("2020-10-14")) |
+    between(as.Date(playerboxscore$FullDate[i]),as.Date("2019-04-13"),as.Date("2019-06-14"))){
+  playerboxscore$Playoff[i] <- 1
+}
+else{playerboxscore$Playoff[i] <- 0}
+}
+
+```
+
+Create columns to determine if game was during bubble period
+```{r}
+for (i in 1:nrow(playerboxscore)){
+if(between(as.Date(playerboxscore$FullDate[i]),as.Date("2020-07-30"),as.Date("2020-10-12"))){
+  playerboxscore$BubbleGame[i] <- 1
+}
+else{playerboxscore$BubbleGame[i] <- 0}
+}
+```
+
+Export Dataset as csv (Set the save address path to wherever you would like)
+```{r}
+write.csv(playerboxscore,'C:/Users/abdoa/OneDrive/Desktop/Data 501//BoxscoredataV2.csv',row.names = FALSE)
+```
+
+```{r}
+#New Empty Dataframe
+teamboxscores <- data.frame("Players" = character(0), "MP"=numeric(0),"FG"= numeric(0),"FGA"= numeric(0),"FG%"= numeric(0),"3P"= numeric(0),"3PA"= numeric(0),"3P%"= numeric(0),"FT"= numeric(0),"FTA"= numeric(0),"FT%"= numeric(0),"ORB"= numeric(0),"DRB"= numeric(0),"TRB"= numeric(0),"AST"= numeric(0),
+                         "STL"= numeric(0),"BLK"= numeric(0),"TOV"= numeric(0),"PF"= numeric(0),"PTS"= numeric(0),'gameid'= numeric(0))
+
+
+gameid = 0
+#For loop to go through links
+for (i in 1:length(boxscr_links)){
+boxscr_test <- read_html(boxscr_links[i])
+gameid = gameid + 1
+
+
+#Scrapes each webpage to determine home and away team + date of game
+teamsplaying <- html_nodes(x = boxscr_test, xpath = "//div[@class = 'scorebox']//div//a[@itemprop = 'name']") %>% html_text()
+team_home <- teamsplaying[2]
+team_away <- teamsplaying[1]
+
+date <- boxscr_links[i]
+
+year <- substr(date,48,51)
+month <- substr(date,52,53)
+day <- substr(date,54,55)
+
+fulldate <- paste(year,month,day,sep = "/")
+
+#Scrapes data for home team
+for (i in 1:nrow(team_info)){
+  if (team_home == team_info[i,1]){
+  home_index <- i}
+}
+
+boxscr_tables_basic <- html_nodes(x = boxscr_test, xpath = team_info[home_index,3]) %>% html_table()
+boxscr_tables_advanced <-  html_nodes(x = boxscr_test, xpath = team_info[home_index,4]) %>% html_table()
+
+#Cleans data + Add a few columns + Add data to new dataframe
+  
+  boxscorebas <- as.data.frame(boxscr_tables_basic[1])
+  boxscoreadv <- as.data.frame(boxscr_tables_advanced[1])
+  if(any(colnames(boxscoreadv) == 'Var.17')){
+   boxscoreadv$Var.17 = 'Manual Entry'
+  }
+    if(any(colnames(boxscoreadv) == FALSE)){
+   boxscoreadv$Var.17 = 'Manual Entry'
+}
+ 
+  boxscoreadv[1,1] = "Starters1"
+  boxscoreadv[1,2] = "MP1"
+  boxscore1 <- cbind(boxscorebas, boxscoreadv)
+  names(boxscore1) <- boxscore1[1,]
+  boxscore1 <- boxscore1[-1,]
+  boxscore1 <- boxscore1 %>% filter(Starters == 'Team Totals')
+  boxscore1$Team <- team_home
+  boxscore1$Year <- year
+  boxscore1$Month <- month
+  boxscore1$Day <- day
+  boxscore1$FullDate <- fulldate
+  boxscore1$HomeAway <- 'Home'
+  boxscore1$gameid = gameid
+   
+  if(any(colnames(boxscore1) == 'Manual Entry')){
+   names(boxscore1)[names(boxscore1) == 'Manual Entry'] <- 'BPM'
+}
+  
+  if(any(colnames(boxscore1) == 'BPM') == FALSE){
+  boxscore1$BPM <- 'Manual Entry'
+}
+  teamboxscores <- rbind(teamboxscores,boxscore1)
+
+  #Repeat above but for away team
+for (j in 1:nrow(team_info)){
+  if (team_away == team_info[j,1]){
+   away_index <- j}
+}
+
+
+boxscr_tables_basic <- html_nodes(x = boxscr_test, xpath = team_info[away_index,3]) %>% html_table()
+boxscr_tables_advanced <-  html_nodes(x = boxscr_test, xpath = team_info[away_index,4]) %>% html_table()
+
+  
+  boxscorebas <- as.data.frame(boxscr_tables_basic[1])
+  boxscoreadv <- as.data.frame(boxscr_tables_advanced[1])
+  if(any(colnames(boxscoreadv) == 'Var.17')){
+  boxscoreadv$Var.17 = 'Manual Entry'
+}
+  boxscoreadv[1,1] = "Starters1"
+  boxscoreadv[1,2] = "MP1"
+  boxscore2 <- cbind(boxscorebas, boxscoreadv)
+  names(boxscore2) <- boxscore2[1,]
+  boxscore2 <- boxscore2[-1,]
+  
+  boxscore2 <- boxscore2 %>% filter(Starters == 'Team Totals')
+  boxscore2$Team <- team_away
+  boxscore2$Year <- year
+  boxscore2$Month <- month
+  boxscore2$Day <- day
+  boxscore2$FullDate <- fulldate
+  boxscore2$HomeAway <- 'Away'
+  boxscore2$gameid = gameid
+  
+    if(any(colnames(boxscore2) == 'Manual Entry')){
+    names(boxscore2)[names(boxscore2) == 'Manual Entry'] <- 'BPM'
+}
+if(any(colnames(boxscore2) == 'BPM') == FALSE){
+  boxscore2$BPM <- 'Manual Entry'
+}
+  
+  teamboxscores <- rbind(teamboxscores,boxscore2)
+
+}
+
+
+```
+
+Create columns to determine if game was a playoff game
+```{r}
+for (i in 1:nrow(teamboxscores)){
+if(between(as.Date(teamboxscores$FullDate[i]),as.Date("2021-05-18"),as.Date("2021-07-30")) | between(as.Date(teamboxscores$FullDate[i]),as.Date("2020-07-15"),as.Date("2020-10-14")) |
+    between(as.Date(teamboxscores$FullDate[i]),as.Date("2019-04-13"),as.Date("2019-06-14"))){
+  teamboxscores$Playoff[i] <- 1
+}
+else{teamboxscores$Playoff[i] <- 0}
+}
+
+```
+
+Create columns to determine if game was during bubble period
+```{r}
+for (i in 1:nrow(teamboxscores)){
+if(between(as.Date(teamboxscores$FullDate[i]),as.Date("2020-07-30"),as.Date("2020-10-12"))){
+  teamboxscores$BubbleGame[i] <- 1
+}
+else{teamboxscores$BubbleGame[i] <- 0}
+}
+```
+
+Remove Extra Rows
+```{r}
+teamboxscores <- teamboxscores %>% select(-`+/-`) %>% select(-BPM) %>% select(-Starters) %>% select(-Starters1)
+
+teamboxscores <- teamboxscores %>% select(Team,everything())
+```
+
+Export Dataset as csv (Set the save address path to wherever you would like)
+```{r}
+write.csv(teamboxscores,'C:/Users/abdoa/OneDrive/Desktop/Data 501//TeamBoxscoredataV1.csv',row.names = FALSE)
+```
+
+##### 2021-2022 NBA SEASON #####
+```{r}
+boxscr_links2022 <- character(0)
+```
+
+```{r}
+for (i in 1:length(html_2022)) {
+  # scrape all box score links
+  scrape_i2022 <- read_html(html_2022[i])
+  links_i2022 <- html_elements(scrape_i2022, "td a") %>% html_attr("href")
+  links_i2022 <- links_i2022[(seq(from=3, to=length(links_i2022), by=3))]
+  boxscr_links2022 <- c(boxscr_links2022, paste0("https://www.basketball-reference.com", links_i2022[1:length(links_i2022)]))
+}
+
+```
+
+```{r}
+#New Empty Dataframe
+playerboxscores2022 <- data.frame("Players" = character(0), "MP"=numeric(0),"FG"= numeric(0),"FGA"= numeric(0),"FG%"= numeric(0),"3P"= numeric(0),"3PA"= numeric(0),"3P%"= numeric(0),"FT"= numeric(0),"FTA"= numeric(0),"FT%"= numeric(0),"ORB"= numeric(0),"DRB"= numeric(0),"TRB"= numeric(0),"AST"= numeric(0),
+                         "STL"= numeric(0),"BLK"= numeric(0),"TOV"= numeric(0),"PF"= numeric(0),"PTS"= numeric(0),'gameid'= numeric(0))
+
+
+gameid = 0
+#For loop to go through links
+
+for (i in 1:length(boxscr_links2022)){
+boxscr_test <- read_html(boxscr_links2022[i])
+gameid = gameid + 1
+
+
+#Scrapes each webpage to determine home and away team + date of game
+teamsplaying <- html_nodes(x = boxscr_test, xpath = "//div[@class = 'scorebox']//div//a[@itemprop = 'name']") %>% html_text()
+team_home <- teamsplaying[2]
+team_away <- teamsplaying[1]
+
+date <- boxscr_links2022[i]
+
+year <- substr(date,48,51)
+month <- substr(date,52,53)
+day <- substr(date,54,55)
+
+fulldate <- paste(year,month,day,sep = "/")
+
+#Scrapes data for home team
+for (i in 1:nrow(team_info)){
+  if (team_home == team_info[i,1]){
+  home_index <- i}
+}
+
+boxscr_tables_basic <- html_nodes(x = boxscr_test, xpath = team_info[home_index,3]) %>% html_table()
+boxscr_tables_advanced <-  html_nodes(x = boxscr_test, xpath = team_info[home_index,4]) %>% html_table()
+
+#Cleans data + Add a few columns + Add data to new dataframe
+  
+  boxscorebas <- as.data.frame(boxscr_tables_basic[1])
+  boxscoreadv <- as.data.frame(boxscr_tables_advanced[1])
+  if(any(colnames(boxscoreadv) == 'Var.17')){
+   boxscoreadv$Var.17 = 'Manual Entry'
+  }
+    if(any(colnames(boxscoreadv) == FALSE)){
+   boxscoreadv$Var.17 = 'Manual Entry'
+}
+ 
+  boxscoreadv[1,1] = "Starters1"
+  boxscoreadv[1,2] = "MP1"
+  boxscore1 <- cbind(boxscorebas, boxscoreadv)
+  names(boxscore1) <- boxscore1[1,]
+  boxscore1 <- boxscore1[-1,]
+  boxscore1 <- boxscore1 %>% filter(Starters != 'Reserves' & Starters != 'Team Totals' & MP != "Did Not Play" & MP != "Did Not Dress" & MP != "Not With Team")
+  boxscore1$Team <- team_home
+  boxscore1$Year <- year
+  boxscore1$Month <- month
+  boxscore1$Day <- day
+  boxscore1$FullDate <- fulldate
+  boxscore1$HomeAway <- 'Home'
+  boxscore1$gameid = gameid
+   
+  if(any(colnames(boxscore1) == 'Manual Entry')){
+   names(boxscore1)[names(boxscore1) == 'Manual Entry'] <- 'BPM'
+}
+  
+  if(any(colnames(boxscore1) == 'BPM') == FALSE){
+  boxscore1$BPM <- 'Manual Entry'
+}
+  playerboxscores2022 <- rbind(playerboxscores2022,boxscore1)
+
+  #Repeat above but for away team
+for (j in 1:nrow(team_info)){
+  if (team_away == team_info[j,1]){
+   away_index <- j}
+}
+
+
+boxscr_tables_basic <- html_nodes(x = boxscr_test, xpath = team_info[away_index,3]) %>% html_table()
+boxscr_tables_advanced <-  html_nodes(x = boxscr_test, xpath = team_info[away_index,4]) %>% html_table()
+
+  
+  boxscorebas <- as.data.frame(boxscr_tables_basic[1])
+  boxscoreadv <- as.data.frame(boxscr_tables_advanced[1])
+  if(any(colnames(boxscoreadv) == 'Var.17')){
+  boxscoreadv$Var.17 = 'Manual Entry'
+}
+  boxscoreadv[1,1] = "Starters1"
+  boxscoreadv[1,2] = "MP1"
+  boxscore2 <- cbind(boxscorebas, boxscoreadv)
+  names(boxscore2) <- boxscore2[1,]
+  boxscore2 <- boxscore2[-1,]
+  
+  boxscore2 <- boxscore2 %>% filter(Starters != 'Reserves' & Starters != 'Team Totals' & MP != "Did Not Play" & MP != "Did Not Dress" & MP != "Not With Team")
+  boxscore2$Team <- team_away
+  boxscore2$Year <- year
+  boxscore2$Month <- month
+  boxscore2$Day <- day
+  boxscore2$FullDate <- fulldate
+  boxscore2$HomeAway <- 'Away'
+  boxscore2$gameid = gameid
+  
+    if(any(colnames(boxscore2) == 'Manual Entry')){
+    names(boxscore2)[names(boxscore2) == 'Manual Entry'] <- 'BPM'
+}
+if(any(colnames(boxscore2) == 'BPM') == FALSE){
+  boxscore2$BPM <- 'Manual Entry'
+}
+  
+  playerboxscores2022 <- rbind(playerboxscores2022,boxscore2)
+
+}
+
+
+```
+
+Determine PLayoff Games
+```{r}
+for (i in 1:nrow(playerboxscores2022)){
+if(between(as.Date(playerboxscores2022$FullDate[i]),as.Date("2022-04-16"),as.Date("2022-06-19"))){
+  playerboxscores2022$Playoff[i] <- 1
+}
+else{playerboxscores2022$Playoff[i] <- 0}
+}
+
+```
+
+Create columns to determine if game was during bubble period
+```{r}
+for (i in 1:nrow(playerboxscores2022)){
+if(between(as.Date(playerboxscores2022$FullDate[i]),as.Date("2020-07-30"),as.Date("2020-10-12"))){
+  playerboxscores2022$BubbleGame[i] <- 1
+}
+else{playerboxscores2022$BubbleGame[i] <- 0}
+}
+```
+
+```{r}
+playerboxscores2022$gameid <- playerboxscores2022$gameid + 3626
+```
+Export Dataset as csv (Set the save address path to wherever you would like)
+```{r}
+write.csv(playerboxscores2022,'C:/Users/abdoa/OneDrive/Desktop/Data 501//PlayerBoxscoredata2022V1.csv',row.names = FALSE)
+```
+
+```{r}
+#New Empty Dataframe
+teamboxscores2022 <- data.frame("Players" = character(0), "MP"=numeric(0),"FG"= numeric(0),"FGA"= numeric(0),"FG%"= numeric(0),"3P"= numeric(0),"3PA"= numeric(0),"3P%"= numeric(0),"FT"= numeric(0),"FTA"= numeric(0),"FT%"= numeric(0),"ORB"= numeric(0),"DRB"= numeric(0),"TRB"= numeric(0),"AST"= numeric(0),
+                         "STL"= numeric(0),"BLK"= numeric(0),"TOV"= numeric(0),"PF"= numeric(0),"PTS"= numeric(0),'gameid'= numeric(0))
+
+
+gameid = 0
+#For loop to go through links
+for (i in 1:length(boxscr_links2022)){
+boxscr_test <- read_html(boxscr_links2022[i])
+gameid = gameid + 1
+
+
+#Scrapes each webpage to determine home and away team + date of game
+teamsplaying <- html_nodes(x = boxscr_test, xpath = "//div[@class = 'scorebox']//div//a[@itemprop = 'name']") %>% html_text()
+team_home <- teamsplaying[2]
+team_away <- teamsplaying[1]
+
+date <- boxscr_links2022[i]
+
+year <- substr(date,48,51)
+month <- substr(date,52,53)
+day <- substr(date,54,55)
+
+fulldate <- paste(year,month,day,sep = "/")
+
+#Scrapes data for home team
+for (i in 1:nrow(team_info)){
+  if (team_home == team_info[i,1]){
+  home_index <- i}
+}
+
+boxscr_tables_basic <- html_nodes(x = boxscr_test, xpath = team_info[home_index,3]) %>% html_table()
+boxscr_tables_advanced <-  html_nodes(x = boxscr_test, xpath = team_info[home_index,4]) %>% html_table()
+
+#Cleans data + Add a few columns + Add data to new dataframe
+  
+  boxscorebas <- as.data.frame(boxscr_tables_basic[1])
+  boxscoreadv <- as.data.frame(boxscr_tables_advanced[1])
+  if(any(colnames(boxscoreadv) == 'Var.17')){
+   boxscoreadv$Var.17 = 'Manual Entry'
+  }
+    if(any(colnames(boxscoreadv) == FALSE)){
+   boxscoreadv$Var.17 = 'Manual Entry'
+}
+ 
+  boxscoreadv[1,1] = "Starters1"
+  boxscoreadv[1,2] = "MP1"
+  boxscore1 <- cbind(boxscorebas, boxscoreadv)
+  names(boxscore1) <- boxscore1[1,]
+  boxscore1 <- boxscore1[-1,]
+  boxscore1 <- boxscore1 %>% filter(Starters == 'Team Totals')
+  boxscore1$Team <- team_home
+  boxscore1$Year <- year
+  boxscore1$Month <- month
+  boxscore1$Day <- day
+  boxscore1$FullDate <- fulldate
+  boxscore1$HomeAway <- 'Home'
+  boxscore1$gameid = gameid
+   
+  if(any(colnames(boxscore1) == 'Manual Entry')){
+   names(boxscore1)[names(boxscore1) == 'Manual Entry'] <- 'BPM'
+}
+  
+  if(any(colnames(boxscore1) == 'BPM') == FALSE){
+  boxscore1$BPM <- 'Manual Entry'
+}
+  teamboxscores2022 <- rbind(teamboxscores2022,boxscore1)
+
+  #Repeat above but for away team
+for (j in 1:nrow(team_info)){
+  if (team_away == team_info[j,1]){
+   away_index <- j}
+}
+
+
+boxscr_tables_basic <- html_nodes(x = boxscr_test, xpath = team_info[away_index,3]) %>% html_table()
+boxscr_tables_advanced <-  html_nodes(x = boxscr_test, xpath = team_info[away_index,4]) %>% html_table()
+
+  
+  boxscorebas <- as.data.frame(boxscr_tables_basic[1])
+  boxscoreadv <- as.data.frame(boxscr_tables_advanced[1])
+  if(any(colnames(boxscoreadv) == 'Var.17')){
+  boxscoreadv$Var.17 = 'Manual Entry'
+}
+  boxscoreadv[1,1] = "Starters1"
+  boxscoreadv[1,2] = "MP1"
+  boxscore2 <- cbind(boxscorebas, boxscoreadv)
+  names(boxscore2) <- boxscore2[1,]
+  boxscore2 <- boxscore2[-1,]
+  
+  boxscore2 <- boxscore2 %>% filter(Starters == 'Team Totals')
+  boxscore2$Team <- team_away
+  boxscore2$Year <- year
+  boxscore2$Month <- month
+  boxscore2$Day <- day
+  boxscore2$FullDate <- fulldate
+  boxscore2$HomeAway <- 'Away'
+  boxscore2$gameid = gameid
+  
+    if(any(colnames(boxscore2) == 'Manual Entry')){
+    names(boxscore2)[names(boxscore2) == 'Manual Entry'] <- 'BPM'
+}
+if(any(colnames(boxscore2) == 'BPM') == FALSE){
+  boxscore2$BPM <- 'Manual Entry'
+}
+  
+  teamboxscores2022 <- rbind(teamboxscores2022,boxscore2)
+
+}
+
+
+```
+
+```{r}
+for (i in 1:nrow(teamboxscores2022)){
+if(between(as.Date(teamboxscores2022$FullDate[i]),as.Date("2022-04-16"),as.Date("2022-06-19"))){
+  teamboxscores2022$Playoff[i] <- 1
+}
+else{teamboxscores2022$Playoff[i] <- 0}
+}
+
+```
+
+```{r}
+for (i in 1:nrow(teamboxscores2022)){
+if(between(as.Date(teamboxscores2022$FullDate[i]),as.Date("2020-07-30"),as.Date("2020-10-12"))){
+  teamboxscores2022$BubbleGame[i] <- 1
+}
+else{teamboxscores2022$BubbleGame[i] <- 0}
+}
+```
+
+```{r}
+teamboxscores2022$gameid <- teamboxscores2022$gameid + 3626
+```
+
+Remove Extra Rows
+```{r}
+teamboxscores2022 <- teamboxscores2022 %>% select(-`+/-`) %>% select(-BPM) %>% select(-Starters) %>% select(-Starters1)
+
+teamboxscores2022 <- teamboxscores2022 %>% select(Team,everything())
+```
+
+Export Dataset as csv (Set the save address path to wherever you would like)
+```{r}
+write.csv(teamboxscores2022,'C:/Users/abdoa/OneDrive/Desktop/Data 501//TeamBoxscoredata2022V1.csv',row.names = FALSE)
+```
+
+Merge 2022 with the rest of the seasons
+(Read the csv for the data for seasons from 2018-2020 from the location on your computer, and add the 2021-2022 season from directly above. We are just going to combine them.)
+
+```{r}
+players_stats <- read.csv("C:/Users/abdoa/OneDrive/Desktop/Data 501/BoxscoredataV2.csv")
+playerboxscores2022 <- playerboxscores2022 %>% relocate(Playoff, .after = last_col())
+players_stats <- rbind(players_stats,playerboxscores2022)
+```
+
+```{r}
+team_stats <- read.csv("C:/Users/abdoa/OneDrive/Desktop/Data 501/TeamBoxscoredataV1.csv")
+teamboxscores2022 <- teamboxscores2022 %>% relocate(Playoff, .after = last_col())
+team_stats <- rbind(team_stats,teamboxscores2022)
+```
+
+```{r}
+for (i in 1:nrow(players_stats)){
+if(between(as.Date(players_stats$FullDate[i]),as.Date("2018-10-01"), as.Date("2019-07-01"))){
+  players_stats$Season[i] <- "2018-2019"
+  
+}
+  else if(between(as.Date(players_stats$FullDate[i]),as.Date("2019-10-01"), as.Date("2020-11-01"))){
+    players_stats$Season[i] <- "2019-2020"
+  }
+  else if(between(as.Date(players_stats$FullDate[i]),as.Date("2020-12-01"), as.Date("2021-07-01"))){
+     players_stats$Season[i] <- "2020-2021"
+}
+else{players_stats$Season[i] <- "2021-2022"}
+
+}
+
+
+
+
+
+
+
+for (i in 1:nrow(team_stats)){
+if(between(as.Date(team_stats$FullDate[i]),as.Date("2018-10-01"), as.Date("2019-07-01"))){
+  team_stats$Season[i] <- "2018-2019"
+  
+}
+  else if(between(as.Date(team_stats$FullDate[i]),as.Date("2019-10-01"), as.Date("2020-11-01"))){
+    team_stats$Season[i] <- "2019-2020"
+  }
+  else if(between(as.Date(team_stats$FullDate[i]),as.Date("2020-12-01"), as.Date("2021-07-01"))){
+     team_stats$Season[i] <- "2020-2021"
+}
+else{team_stats$Season[i] <- "2021-2022"}
+
+}
+
+
+
+```
+
+Standings Links
+```{r}
+standings_links <-c("https://basketball-reference.com/leagues/NBA_2019_standings.html","https://basketball-reference.com/leagues/NBA_2020_standings.html","https://basketball-reference.com/leagues/NBA_2021_standings.html","https://basketball-reference.com/leagues/NBA_2022_standings.html")
+
+
+standings_test <- read_html(standings_links[1])
+links_test <- html_elements(standings_test, "td a") %>% html_attr("href")
+standings_tables <- html_nodes(x = links_test, xpath = "//div[@class='table_container is_setup' and @id='div_expanded_standings']")
+
+standings_test
+
+
+
+
+
+
+for (i in 1:length(standings_links)) {
+
+  standings_tables <- html_nodes(x = standings_links[i], xpath = "//div[@class='table_container is_setup' and @id='div_expanded_standings']") %>% html_table()
+}
+
+View(links_test)
+```
+
+Export Dataset as csv (Set the save address path to wherever you would like)
+```{r}
+write.csv(team_stats,'C:/Users/abdoa/OneDrive/Desktop/Data 501//TeamBoxscoredataV2.csv',row.names = FALSE)
+write.csv(players_stats,'C:/Users/abdoa/OneDrive/Desktop/Data 501//PlayerBoxscoredataV2.csv',row.names = FALSE)
+```
+

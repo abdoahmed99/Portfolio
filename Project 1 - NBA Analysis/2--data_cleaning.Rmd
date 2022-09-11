@@ -1,0 +1,169 @@
+---
+title: "Cleaning the Scraped Data"
+output: html_notebook
+---
+
+Libraries
+```{r include=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(ggrepel)
+library(tidyr)
+library(stats)
+```
+
+# Load and Clean Data
+
+Set working directory
+```{r}
+setwd('C:/Users/alexs/OneDrive - University of Calgary/School/1. DATA 501')
+```
+
+Read CSV
+```{r}
+player_game_data <- read.csv("data/PlayerBoxscoredata_scrape.csv", header=T, encoding="UTF-8")
+team_game_data <- read.csv("data/TeamBoxscoredata_scrape.csv", header=T, encoding="UTF-8")
+```
+
+Change Data Types - Player Game Data
+```{r}
+player_game_data$FG <- as.numeric(player_game_data$FG)
+player_game_data$FGA <- as.numeric(player_game_data$FGA)
+player_game_data$FG. <- as.numeric(player_game_data$FG.)
+player_game_data$X3P <- as.numeric(player_game_data$X3P)
+player_game_data$X3PA <- as.numeric(player_game_data$X3PA)
+player_game_data$X3P. <- as.numeric(player_game_data$X3P.)
+player_game_data$FT <- as.numeric(player_game_data$FT)
+player_game_data$FTA <- as.numeric(player_game_data$FTA)
+player_game_data$FT. <- as.numeric(player_game_data$FT.)
+player_game_data$ORB <- as.numeric(player_game_data$ORB)
+player_game_data$DRB <- as.numeric(player_game_data$DRB)
+player_game_data$TRB <- as.numeric(player_game_data$TRB)
+player_game_data$AST <- as.numeric(player_game_data$AST)
+player_game_data$STL <- as.numeric(player_game_data$STL)
+player_game_data$BLK <- as.numeric(player_game_data$BLK)
+player_game_data$TOV <- as.numeric(player_game_data$TOV)
+player_game_data$PF <- as.numeric(player_game_data$PF)
+player_game_data$PTS <- as.numeric(player_game_data$PTS)
+player_game_data$X... <- as.numeric(player_game_data$X...)
+player_game_data$TS. <- as.numeric(player_game_data$TS.)
+player_game_data$eFG. <- as.numeric(player_game_data$eFG.)
+player_game_data$X3PAr <- as.numeric(player_game_data$X3PAr)
+player_game_data$FTr <- as.numeric(player_game_data$FTr)
+player_game_data$ORB. <- as.numeric(player_game_data$ORB.)
+player_game_data$DRB. <- as.numeric(player_game_data$DRB.)
+player_game_data$TRB. <- as.numeric(player_game_data$TRB.)
+player_game_data$AST. <- as.numeric(player_game_data$AST.)
+player_game_data$STL. <- as.numeric(player_game_data$STL.)
+player_game_data$BLK. <- as.numeric(player_game_data$BLK.)
+player_game_data$TOV. <- as.numeric(player_game_data$TOV.)
+player_game_data$USG. <- as.numeric(player_game_data$USG.)
+player_game_data$ORtg <- as.numeric(player_game_data$ORtg)
+player_game_data$DRtg <- as.numeric(player_game_data$DRtg)
+player_game_data$BPM <- as.numeric(player_game_data$BPM)
+
+```
+
+Rename first column
+```{r}
+colnames(player_game_data)[1] <- "Starters"
+colnames(team_game_data)[1] <- "Team"
+```
+
+Change MP to numeric
+```{r}
+minute_split <- data.frame(str_split_fixed(player_game_data$MP, pattern=":", n=3))
+
+minute_split <- minute_split[,1:2]
+
+colnames(minute_split) <- c("Minutes", "Seconds")
+
+minute_split$Minutes <- as.numeric(minute_split$Minutes)
+minute_split$Seconds <- as.numeric(minute_split$Seconds)
+
+minute_split <- minute_split %>%
+  mutate(MP = Minutes + (Seconds/60))
+
+player_game_data <- cbind(player_game_data, minute_split)
+
+colnames(player_game_data)[2] <- "MP_old"
+
+rm(minute_split)
+```
+
+Add playoff column
+```{r}
+player_game_data$Playoff <- 0
+player_game_data$Playoff[player_game_data$FullDate>=as.Date("2021-05-18")&player_game_data$FullDate<=as.Date("2021-07-30")]=1
+player_game_data$Playoff[player_game_data$FullDate>=as.Date("2020-08-15")&player_game_data$FullDate<=as.Date("2020-10-14")]=1
+player_game_data$Playoff[player_game_data$FullDate>=as.Date("2019-04-13")&player_game_data$FullDate<=as.Date("2019-06-14")]=1
+```
+
+Add season column
+```{r}
+player_game_data$season <- player_game_data$FullDate
+player_game_data$season[player_game_data$FullDate<as.Date("2019-06-14")]=1
+player_game_data$season[player_game_data$FullDate>as.Date("2019-06-14")&player_game_data$FullDate<as.Date("2020-10-12")]=2
+player_game_data$season[player_game_data$FullDate>as.Date("2020-10-12")&player_game_data$FullDate<as.Date("2021-07-21")]=3
+player_game_data$season[player_game_data$FullDate>as.Date("2021-10-18")]=4
+
+team_game_data$season <- team_game_data$FullDate
+team_game_data$season[team_game_data$FullDate<as.Date("2019-06-14")]=1
+team_game_data$season[team_game_data$FullDate>as.Date("2019-06-14")&team_game_data$FullDate<as.Date("2020-10-12")]=2
+team_game_data$season[team_game_data$FullDate>as.Date("2020-10-12")&team_game_data$FullDate<as.Date("2021-07-21")]=3
+team_game_data$season[team_game_data$FullDate>as.Date("2021-10-18")]=4
+```
+
+Add team season column
+```{r}
+team_game_data <- team_game_data %>%
+  mutate(team_season = paste0(Team, season))
+```
+
+Create WinLoss & Win columns
+```{r}
+pts1 <- team_game_data$PTS
+away_index <- seq(from=2, to=9372, by=2)
+home_index <- seq(from=1, to=9371, by=2)
+opp_index <- c(rbind(away_index, home_index))
+opp_pts <- pts1[opp_index]
+
+team_game_data$opp_pts <- opp_pts
+
+team_game_data$WinLoss[team_game_data$PTS>team_game_data$opp_pts] = "Win"
+team_game_data$WinLoss[team_game_data$PTS<team_game_data$opp_pts] = "Loss"
+team_game_data$Win[team_game_data$PTS>team_game_data$opp_pts] = 1
+team_game_data$Win[team_game_data$PTS<team_game_data$opp_pts] = 0
+
+
+rm(pts1, away_index, home_index, opp_index, opp_pts)
+```
+
+Fill null attendance data
+```{r}
+player_game_data <- player_game_data %>% replace_na(list(attendance=0))
+team_game_data <- team_game_data %>% replace_na(list(attendance=0))
+team_game_data$attendance[team_game_data$attendance == ""] <- 0
+
+team_game_data$attendance <- as.numeric(gsub(",", "", team_game_data$attendance))
+```
+
+Categorize attendance Data
+```{r}
+player_game_data$empty <- player_game_data$attendance
+player_game_data$empty[player_game_data$attendance==0] <- 1
+player_game_data$empty[player_game_data$attendance>0] <- 0
+player_game_data$empty[player_game_data$attendance=="*"] <- 0
+
+team_game_data$empty <- team_game_data$attendance
+team_game_data$empty[team_game_data$attendance==0] <- 1
+team_game_data$empty[team_game_data$attendance>0] <- 0
+team_game_data$empty[team_game_data$attendance=="*"] <- 0
+```
+
+```{r}
+write.csv(player_game_data, "C:/Users/alexs/OneDrive - University of Calgary/School/1. DATA 501/data/player_game_data.csv", row.names = F)
+write.csv(team_game_data, "C:/Users/alexs/OneDrive - University of Calgary/School/1. DATA 501/data/team_game_data.csv", row.names = F)
+```
+
+
