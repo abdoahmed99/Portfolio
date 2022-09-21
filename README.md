@@ -22,7 +22,7 @@ Here I will give a description of each project, describe the technology stack th
 
 **R Shiny Web App:** [Link Here](https://abdoahmed.shinyapps.io/shinyapp_v1/)
 
-**Full Project Report:** [`nba_analysis_final_report.pdf]`
+**Full Project Report:**[`nba_analysis_final_report.pdf`](https://github.com/abdoahmed99/Portfolio/blob/45aaf24e26df128c25a9c6f12fe57cd23edbd1e9/Project%201%20-%20NBA%20Analysis/NBA%20Analysis%20-%20Final%20Report.pdf)
 
 
 Description: 
@@ -34,9 +34,9 @@ Technologies: R, Excel, RVest, Dplyr, GGPlot, Tidyverse, Mosaic, XPath, R Shiny 
 
 ### Mock SQL/Python Bookstore
 
-**Project Presentation:** [`sql_bookstore_mini_project.pdf`]
+**Project Presentation:**[`sql_bookstore_mini_project.pdf`](https://github.com/abdoahmed99/Portfolio/blob/45aaf24e26df128c25a9c6f12fe57cd23edbd1e9/Project%202%20-%20SQL%20Bookstore/SQL%20Bookstore%20Mini%20Project.pdf)
 
-**Code:** [`bookstore_database_project.ipnyb`]
+**Code:**[`bookstore_database_project.ipnyb`](https://github.com/abdoahmed99/Portfolio/blob/45aaf24e26df128c25a9c6f12fe57cd23edbd1e9/Project%202%20-%20SQL%20Bookstore/Bookstore%20Database%20Project.ipynb)
 
 Description: I created a Mock Bookstore database system using PostgreSQL as my RDBMS. Additionally, I used Python scripts to connect this database, add tables to the database, and to populate databases. All of these actions will be executed using SQL quesies within the Python script. 
 
